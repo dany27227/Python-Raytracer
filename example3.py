@@ -10,8 +10,8 @@ green_glass = Refractive(n = vec3(1.5 + 4e-8j,1.5 + 0.j,1.5 + 4e-8j))
 
 Sc = Scene()
 Sc.add_Camera(look_from = vec3(0., 0.25, 1. ), look_at = vec3(0., 0.25, -3.),
-	          screen_width = 400 ,
-	          screen_height = 300)
+	          screen_width = 3840 ,
+	          screen_height = 2160)
 
 
 Sc.add_DirectionalLight(Ldir = vec3(0.0,0.5, 0.5),  color = rgb(0.5, 0.5, 0.5))
@@ -28,8 +28,8 @@ Sc.add(cb)
 Sc.add_Background("stormydays.png")
 
 # Render 
-img = Sc.render(samples_per_pixel = 4)
+img = Sc.render(samples_per_pixel = 8)
 
-img.save("EXAMPLE3.png")
+#img.save("EXAMPLE3.png")
 
-img.show()
+#img.show()

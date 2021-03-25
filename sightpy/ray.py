@@ -61,7 +61,6 @@ def get_raycolor(ray, scene):
     inters = [s.intersect(ray.origin, ray.dir) for s in scene.collider_list]
     distances, hit_orientation = zip(*inters)
 
-    
     # get the shortest distance collision
     nearest = reduce(np.minimum, distances)
     color = rgb(0., 0., 0.)

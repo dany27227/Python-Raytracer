@@ -19,8 +19,8 @@ Sc = Scene(ambient_color = rgb(0.05, 0.05, 0.05))
 angle = -np.pi/2 * 0.3
 Sc.add_Camera(look_from = vec3(2.5*np.sin(angle), 0.25, 2.5*np.cos(angle)  -1.5 ), 
 			  look_at = vec3(0., 0.25, -3.), 
-	          screen_width = 400 ,
-	          screen_height = 300)
+	          screen_width = 3200 ,
+	          screen_height = 1800)
 
 
 
@@ -38,9 +38,17 @@ Sc.add_Background("stormydays.png")
 
 
 
-# Render 
-img = Sc.render(samples_per_pixel = 6)
+# Render
 
-img.save("EXAMPLE1.png")
+app = QApplication(sys.argv)
+ex = App(Sc)
+ex.runLongTask(Sc, progResStep=0, threads=1)
+ex.runLongTask(Sc, progResStep=1, threads=1)
+ex.runLongTask(Sc, progResStep=2, threads=4)
+app.exec()
 
-img.show()
+#img = Sc.render(samples_per_pixel = 6)
+
+#img.save("EXAMPLE1.png")
+
+#img.show()
