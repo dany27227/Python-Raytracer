@@ -91,7 +91,7 @@ class Diffuse(Material):
 
             NdotL = np.clip(N.dot(ray_dir),0.,1.)
             color_temp = diff_color * get_raycolor(Ray(nudged, ray_dir, ray.depth + 1, ray.n, ray.reflections + 1, ray.transmissions, ray.diffuse_reflections + 1), scene)
-            color = color_temp * NdotL  / PDF_val / (np.pi) 
+            color = color_temp * NdotL  / PDF_val / (np.pi)
 
             return color
             

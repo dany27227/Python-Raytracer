@@ -8,6 +8,7 @@ class Camera():
         self.screen_width = screen_width
         self.screen_height = screen_height
         self.aspect_ratio = float(screen_width) / screen_height
+        self.field_of_view = field_of_view
 
         self.look_from = look_from
         self.look_at = look_at
@@ -38,7 +39,7 @@ class Camera():
         self.x = xx.flatten()
         self.y = yy.flatten()
 
-    def get_ray(self,n): # n = index of refraction of scene main medium (for air n = 1.)
+    def get_ray(self, n, threads = 1): # n = index of refraction of scene main medium (for air n = 1.)
 
         # in each pixel, take a random position to avoid aliasing.
         x = self.x + (np.random.rand(len(self.x )) - 0.5)*self.camera_width  /(self.screen_width)
@@ -48,5 +49,28 @@ class Camera():
         rx, ry = random_in_unit_disk(x.shape[0])
         ray_origin = self.look_from  +   self.cameraRight *rx* self.lens_radius   +   self.cameraUp *ry* self.lens_radius
         ray_dir = (self.look_from  +   self.cameraUp*y*self.focal_distance  +  self.cameraRight*x*self.focal_distance  + self.cameraFwd*self.focal_distance  - ray_origin  ).normalize()
-        return Ray(origin=ray_origin, dir=ray_dir, depth=0,  n=n, reflections = 0, transmissions = 0, diffuse_reflections = 0)
+
+        final_ray = []
+
+        #Split image horizontally for threaded execution
+        if threads == 1:
+            final_ray.append(Ray(origin=ray_origin, dir=ray_dir, depth=0, n=n, reflections=0, transmissions=0, diffuse_reflections=0))
+
+        else:
+            split_ray_origin_x = np.array_split(ray_origin.x, threads, axis=0)
+            split_ray_origin_y = np.array_split(ray_origin.y, threads, axis=0)
+            split_ray_origin_z = np.array_split(ray_origin.z, threads, axis=0)
+
+            split_ray_dir_x = np.array_split(ray_dir.x, threads, axis=0)
+            split_ray_dir_y = np.array_split(ray_dir.y, threads, axis=0)
+            split_ray_dir_z = np.array_split(ray_dir.z, threads, axis=0)
+
+            for t in range(threads):
+                split_ray_origin_t = vec3(split_ray_origin_x[t], split_ray_origin_y[t], split_ray_origin_z[t])
+                split_ray_dir_t = vec3(split_ray_dir_x[t], split_ray_dir_y[t], split_ray_dir_z[t])
+                final_ray.append(
+                    Ray(origin=split_ray_origin_t, dir=split_ray_dir_t, depth=0, n=n, reflections=0, transmissions=0,
+                        diffuse_reflections=0))
+
+        return final_ray
 

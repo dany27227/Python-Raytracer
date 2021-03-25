@@ -10,6 +10,25 @@ from . import lights
 from .backgrounds.skybox import SkyBox
 from .backgrounds.panorama import Panorama
 
+from threading import Thread
+
+import sys
+from PyQt5.QtWidgets import QApplication, QWidget, QLabel
+from PyQt5.QtGui import QIcon, QPixmap
+from PyQt5.QtCore import QObject, QThread, pyqtSignal
+
+class ThreadWithReturnValue(Thread):
+    def __init__(self, group=None, target=None, name=None, args=(), kwargs={}, Verbose=None):
+        Thread.__init__(self, group, target, name, args, kwargs)
+        self._return = None
+    def run(self):
+        #print(type(self._target))
+        if self._target is not None:
+            self._return = self._target(*self._args, **self._kwargs)
+    def join(self, *args):
+        Thread.join(self, *args)
+        return self._return
+
 
 class Scene():
     def __init__(self, ambient_color = rgb(0.01, 0.01, 0.01), n = vec3(1.0,1.0,1.0)) :
@@ -56,12 +75,15 @@ class Scene():
         self.collider_list += primitive.collider_list
 
         
-    def render(self, samples_per_pixel, progress_bar = False):
+    def render(self, progResStep, worker, threads, samples_per_pixel, progress_bar = False):
 
         print ("Rendering...")
 
         t0 = time.time()
-        color_RGBlinear = rgb(0.,0.,0.)
+        calc_rays = []
+        calc_rays_t = []
+        color_RGBlinearQuarter = rgb(0., 0., 0.)
+        color_RGBlinearHalf = rgb(0., 0., 0.)
 
         if progress_bar == True:
 
@@ -80,23 +102,117 @@ class Scene():
 
 
             for i in range(samples_per_pixel):
-                color_RGBlinear += get_raycolor(self.camera.get_ray(self.n), scene = self)
-                
 
+                if i == 0 and progResStep == 0:
+
+                    tempQuarterCam = Camera(self.camera.look_from, self.camera.look_at,
+                                            screen_width = int(self.camera.screen_width / 4),
+                                            screen_height = int(self.camera.screen_height / 4),
+                                            focal_distance = self.camera.focal_distance,
+                                            field_of_view = self.camera.field_of_view)
+
+                    color_RGBlinearQuarter += get_raycolor(tempQuarterCam.get_ray(self.n)[0], scene=self)
+
+                    q_color = cf.sRGB_linear_to_sRGB(color_RGBlinearQuarter.to_array())
+
+                    q_img_RGB = []
+                    for c in q_color:
+                        # average ray colors that fall in the same pixel. (antialiasing)
+                        q_img_RGB += [Image.fromarray((255 * np.clip(c, 0, 1).reshape((tempQuarterCam.screen_height, tempQuarterCam.screen_width))).astype(np.uint8), "L")]
+
+                    q_img = Image.merge("RGB", q_img_RGB)
+                    q_img.save(f"images/progThread{i + 1}.png")
+
+                    worker.samplePass.emit(i)
+
+                    print ("Render Took", time.time() - t0)
+
+                elif i == 1 and progResStep == 1:
+
+                    tempHalfCam = Camera(self.camera.look_from, self.camera.look_at,
+                                            screen_width=int(self.camera.screen_width / 2),
+                                            screen_height=int(self.camera.screen_height / 2),
+                                            focal_distance = self.camera.focal_distance,
+                                            field_of_view = self.camera.field_of_view)
+
+                    color_RGBlinearHalf += get_raycolor(tempHalfCam.get_ray(self.n)[0], scene=self)
+
+                    h_color = cf.sRGB_linear_to_sRGB(color_RGBlinearHalf.to_array())
+
+                    h_img_RGB = []
+                    for c in h_color:
+                        # average ray colors that fall in the same pixel. (antialiasing)
+                        h_img_RGB += [Image.fromarray((255 * np.clip(c, 0, 1).reshape((tempHalfCam.screen_height, tempHalfCam.screen_width))).astype(np.uint8), "L")]
+
+                    h_img = Image.merge("RGB", h_img_RGB)
+                    h_img.save(f"images/progThread{i + 1}.png")
+
+                    worker.samplePass.emit(i)
+
+                    print ("Render Took", time.time() - t0)
+
+                elif progResStep == 2:
+
+                    separated_rays = self.camera.get_ray(self.n, threads=threads)
+
+                    if i == 0:
+                        for r in range(len(separated_rays)):
+                            calc_rays.append(rgb(0., 0., 0.))
+                            calc_rays_t.append([None])
+
+                    for r in range(len(separated_rays)):
+                        calc_rays_t[r] = ThreadWithReturnValue(target=get_raycolor, args=(separated_rays[r], self))
+                        calc_rays_t[r].start()
+
+                    for r in range(len(separated_rays)):
+                        calc_rays[r] += calc_rays_t[r].join()
+
+                    if threads == 1:
+                        p_color_RGBlinear = calc_rays[0] / (i + 1)
+
+                    else:
+                        for cr in range(len(calc_rays) - 1):
+                            if cr == 0:
+                                modded_color_x = np.concatenate((calc_rays[cr].x, calc_rays[cr + 1].x))
+                                modded_color_y = np.concatenate((calc_rays[cr].y, calc_rays[cr + 1].y))
+                                modded_color_z = np.concatenate((calc_rays[cr].z, calc_rays[cr + 1].z))
+                            else:
+                                modded_color_x = np.concatenate((modded_color_x, calc_rays[cr + 1].x))
+                                modded_color_y = np.concatenate((modded_color_y, calc_rays[cr + 1].y))
+                                modded_color_z = np.concatenate((modded_color_z, calc_rays[cr + 1].z))
+
+                        modded_color = vec3(modded_color_x, modded_color_y, modded_color_z)
+
+                        p_color_RGBlinear = modded_color / (i + 1)
+
+
+                    p_color = cf.sRGB_linear_to_sRGB(p_color_RGBlinear.to_array())
+
+                    p_img_RGB = []
+                    for c in p_color:
+                        # average ray colors that fall in the same pixel. (antialiasing)
+                        p_img_RGB += [Image.fromarray((255 * np.clip(c, 0, 1).reshape((self.camera.screen_height, self.camera.screen_width))).astype(np.uint8), "L")]
+
+                    p_img = Image.merge("RGB", p_img_RGB)
+                    p_img.save(f"images/progThread{i + 3}.png")
+                    worker.samplePass.emit(i + 2)
+                    #p_img.show()
+                    print("Render Took", time.time() - t0)
+
+
+        #Original block that ran for every sample
 
         #average samples per pixel (antialiasing)
-        color_RGBlinear = color_RGBlinear/samples_per_pixel
+        #color_RGBlinear = color_RGBlinear/samples_per_pixel
         #gamma correction
-        color = cf.sRGB_linear_to_sRGB(color_RGBlinear.to_array())
-        
-        print ("Render Took", time.time() - t0)
+        #color = cf.sRGB_linear_to_sRGB(color_RGBlinear.to_array())
 
-        img_RGB = []
-        for c in color:
+        #img_RGB = []
+        #for c in color:
             # average ray colors that fall in the same pixel. (antialiasing) 
-            img_RGB += [Image.fromarray((255 * np.clip(c, 0, 1).reshape((self.camera.screen_height, self.camera.screen_width))).astype(np.uint8), "L") ]
+            #img_RGB += [Image.fromarray((255 * np.clip(c, 0, 1).reshape((self.camera.screen_height, self.camera.screen_width))).astype(np.uint8), "L") ]
 
-        return Image.merge("RGB", img_RGB)
+        #return Image.merge("RGB", img_RGB)
 
 
     def get_distances(self): #Used for debugging ray-primitive collisions. Return a grey map of objects distances.
@@ -108,7 +224,6 @@ class Scene():
         color = color_RGBlinear.to_array()
         
         print ("Render Took", time.time() - t0)
-
 
         img_RGB = [Image.fromarray((255 * np.clip(c, 0, 1).reshape((self.camera.screen_height, self.camera.screen_width))).astype(np.uint8), "L") for c in color]
         return Image.merge("RGB", img_RGB)
